@@ -42,13 +42,16 @@ void print_files_recursively(const char* dir_path)
   while (ent != NULL) 
   {
     if (ent->d_type == DT_DIR) {
-      char* child_path = join_path(dir_path, ent->d_name);
-      print_files_recursively(child_path);
-      free(child_path);
+      if (strcmp(ent->d_name, ".") != 0 && strcmp(ent->d_name, "..") != 0) 
+      {
+        char* child_path = join_path(dir_path, ent->d_name);
+        print_files_recursively(child_path);
+        free(child_path);
+      }
     } 
     else 
     {
-      printf("file:  %s\n", ent->d_name);
+      printf("file: %s/%s\n", dir_path, ent->d_name);
     }
     ent = readdir(dir);
   }
