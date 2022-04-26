@@ -9,6 +9,73 @@
 #define PATH_SEP "/"
 #define PATH_SEP_LEN (sizeof(PATH_SEP) - 1)
 
+#define DIRS_CAP 1024
+
+typedef struct {
+  DIR* dirs[DIRS_CAP];
+  size_t dirs_size;
+} RECDIR;
+
+int recdir_push(RECDIR* recdir, const char* dir_path)
+{
+  assert(recdir->dirs_size < DIRS_CAP);
+  DIR** dir = &recdir->dirs[recdir->dirs_size];
+  *dir = opendir(dir_path);
+  if (*dir == NULL)
+  {
+    return -1;
+  }
+  recdir->dirs_size++;
+  return 0;
+}
+
+RECDIR* openrecdir(const char* dir_path)
+{
+  RECDIR* recdir = malloc(sizeof(RECDIR));
+  assert(recdir != NULL);
+  memset(recdir, 0, sizeof(RECDIR));
+  
+  if (recdir_push(recdir, dir_path) < 0)
+  {
+    free(recdir);
+    return NULL;
+  }
+
+  return recdir;
+}
+
+struct dirent* readrecdir(RECDIR* recdirp)
+{
+  if (recdirp->dirs_size > 0) {
+    DIR** top = &recdirp->dirs[recdirp->dirs_size - 1];
+
+    errno = 0;
+    struct dirent* ent = readdir(*top);
+
+    if (ent != NULL) {
+      return ent;
+    } else {
+      if (errno != 0) {
+        return NULL;
+      } else {
+        //pop
+      }
+    }
+  } 
+  return NULL;
+}
+
+int closerecdir(RECDIR* recdirp)
+{
+  for (size_t i = 0; i < recdirp->dirs_size; ++i) {
+    int ret = closedir(recdirp->dirs[i]);
+    assert(ret == 0);
+  } 
+  free(recdirp);
+  return 0;
+}
+
+
 char* join_path(const char* base, const char* file)
 {
   size_t base_len = strlen(base);
@@ -28,7 +95,7 @@ char* join_path(const char* base, const char* file)
   return result;
 }
 
-void print_files_recursively(const char* dir_path)
+void visit_files(const char* dir_path)
 {
   DIR *dir = opendir(dir_path);
   if (dir == NULL) {
@@ -41,18 +108,18 @@ void print_files_recursively(const char* dir_path)
   struct dirent *ent = readdir(dir);
   while (ent != NULL) 
   {
+    char* child_path = join_path(dir_path, ent->d_name);
     if (ent->d_type == DT_DIR) {
       if (strcmp(ent->d_name, ".") != 0 && strcmp(ent->d_name, "..") != 0) 
       {
-        char* child_path = join_path(dir_path, ent->d_name);
-        print_files_recursively(child_path);
-        free(child_path);
+        visit_files(child_path);
       }
     } 
     else 
     {
-      printf("file: %s/%s\n", dir_path, ent->d_name);
+      printf("file: %s\n", child_path);
     }
+    free(child_path);
     ent = readdir(dir);
   }
 
@@ -69,7 +136,7 @@ int main(int argc, char** argv)
 { 
   (void) argc; (void) argv;
   const char *dir_path = ".";
-  print_files_recursively(dir_path); 
+  visit_files(dir_path); 
 
   return 0;
 }
