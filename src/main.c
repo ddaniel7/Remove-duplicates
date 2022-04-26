@@ -10,23 +10,39 @@
 #define PATH_SEP_LEN (sizeof(PATH_SEP) - 1)
 
 #define DIRS_CAP 1024
+ 
+typedef struct {
+  DIR* dir;
+  char* path;
+} RECDIR_Frame;
 
 typedef struct {
-  DIR* dirs[DIRS_CAP];
-  size_t dirs_size;
+  RECDIR_Frame stack[DIRS_CAP];
+  size_t stack_size;
 } RECDIR;
 
-int recdir_push(RECDIR* recdir, const char* dir_path)
+int recdir_push(RECDIR* recdir, char* path)
 {
-  assert(recdir->dirs_size < DIRS_CAP);
-  DIR** dir = &recdir->dirs[recdir->dirs_size];
-  *dir = opendir(dir_path);
-  if (*dir == NULL)
+  assert(recdir->stack_size < DIRS_CAP);
+  DIR_Frame* top = &recdir->stack[recdir->stack_size];
+  top->path = path;
+  top->dir = opendir(top->path);
+  if (top->dir == NULL)
   {
+    free(top->path);
     return -1;
   }
-  recdir->dirs_size++;
+  recdir->stack_size++;
   return 0;
+}
+
+void recdir_pop(RECDIR* recdir)
+{ 
+  assert(recdir->stack_size > 0);
+  RECDIR_Frame* top = &recdir->stack[--recdir->stack_size];
+  int ret = closedir(top->dir);
+  assert(ret == 0);
+  free(top->path);
 }
 
 RECDIR* openrecdir(const char* dir_path)
@@ -35,7 +51,7 @@ RECDIR* openrecdir(const char* dir_path)
   assert(recdir != NULL);
   memset(recdir, 0, sizeof(RECDIR));
   
-  if (recdir_push(recdir, dir_path) < 0)
+  if (recdir_push(recdir, strdup(dir_path)) < 0)
   {
     free(recdir);
     return NULL;
@@ -46,19 +62,30 @@ RECDIR* openrecdir(const char* dir_path)
 
 struct dirent* readrecdir(RECDIR* recdirp)
 {
-  if (recdirp->dirs_size > 0) {
-    DIR** top = &recdirp->dirs[recdirp->dirs_size - 1];
+  errno = 0;
+  while (recdirp->stack_size > 0) {
+    RECDIR_Frame* top = &recdirp->stack[recdirp->stack_size - 1];
 
     errno = 0;
-    struct dirent* ent = readdir(*top);
+    struct dirent* ent = readdir(top->dir);
 
-    if (ent != NULL) {
-      return ent;
+    if (ent) {
+      if (ent->d_type == DT_DIR) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+          continue;
+        } else {
+          recdir_push(recdirp, join_path(top->path, ent->d_name));
+          continue;
+        }
+      } else {
+        return ent;
+      }
     } else {
       if (errno != 0) {
         return NULL;
       } else {
-        //pop
+        recdir_pop(recdirp);
+        continue;
       }
     }
   } 
@@ -67,10 +94,9 @@ struct dirent* readrecdir(RECDIR* recdirp)
 
 int closerecdir(RECDIR* recdirp)
 {
-  for (size_t i = 0; i < recdirp->dirs_size; ++i) {
-    int ret = closedir(recdirp->dirs[i]);
-    assert(ret == 0);
-  } 
+  while (recdirp->stack_size > 0) {
+    recdir_pop(recdirp);
+  }
   free(recdirp);
   return 0;
 }
