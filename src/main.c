@@ -3,126 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <dirent.h>  
 #include <assert.h>
+#include "./recdir.h"
 
-#define PATH_SEP "/"
-#define PATH_SEP_LEN (sizeof(PATH_SEP) - 1)
-
-#define DIRS_CAP 1024
- 
-
-char* join_path(const char* base, const char* file);
-
-typedef struct {
-  DIR* dir;
-  char* path;
-} RECDIR_Frame;
-
-typedef struct {
-  RECDIR_Frame stack[DIRS_CAP];
-  size_t stack_size;
-} RECDIR;
-
-int recdir_push(RECDIR* recdir, char* path)
-{
-  assert(recdir->stack_size < DIRS_CAP);
-  RECDIR_Frame* top = &recdir->stack[recdir->stack_size];
-  top->path = path;
-  top->dir = opendir(top->path);
-  if (top->dir == NULL)
-  {
-    free(top->path);
-    return -1;
-  }
-  recdir->stack_size++;
-  return 0;
-}
-
-void recdir_pop(RECDIR* recdir)
-{ 
-  assert(recdir->stack_size > 0);
-  RECDIR_Frame* top = &recdir->stack[--recdir->stack_size];
-  int ret = closedir(top->dir);
-  assert(ret == 0);
-  free(top->path);
-}
-
-RECDIR* openrecdir(const char* dir_path)
-{
-  RECDIR* recdir = malloc(sizeof(RECDIR));
-  assert(recdir != NULL);
-  memset(recdir, 0, sizeof(RECDIR));
-  
-  if (recdir_push(recdir, strdup(dir_path)) < 0)
-  {
-    free(recdir);
-    return NULL;
-  }
-
-  return recdir;
-}
-
-struct dirent* readrecdir(RECDIR* recdirp)
-{
-  errno = 0;
-  while (recdirp->stack_size > 0) {
-    RECDIR_Frame* top = &recdirp->stack[recdirp->stack_size - 1];
-
-    errno = 0;
-    struct dirent* ent = readdir(top->dir);
-
-    if (ent) {
-      if (ent->d_type == DT_DIR) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
-          continue;
-        } else {
-          recdir_push(recdirp, join_path(top->path, ent->d_name));
-          continue;
-        }
-      } else {
-        return ent;
-      }
-    } else {
-      if (errno != 0) {
-        return NULL;
-      } else {
-        recdir_pop(recdirp);
-        continue;
-      }
-    }
-  } 
-  return NULL;
-}
-
-int closerecdir(RECDIR* recdirp)
-{
-  while (recdirp->stack_size > 0) {
-    recdir_pop(recdirp);
-  }
-  free(recdirp);
-  return 0;
-}
-
-
-char* join_path(const char* base, const char* file)
-{
-  size_t base_len = strlen(base);
-  size_t file_len = strlen(file);
-  char* result = malloc(base_len + file_len + PATH_SEP_LEN + 1);
-  assert(result != NULL);
-
-  char* end = result;
-  memcpy(end, base, base_len);
-  end += base_len;
-  memcpy(end, PATH_SEP, PATH_SEP_LEN);
-  end += PATH_SEP_LEN;
-  memcpy(end, file, file_len);
-  end += file_len;
-  *end = '\0';
-
-  return result;
-}
 
 void visit_files(const char* dir_path)
 {
@@ -164,8 +47,21 @@ void visit_files(const char* dir_path)
 int main(int argc, char** argv)
 { 
   (void) argc; (void) argv;
-  const char *dir_path = ".";
-  visit_files(dir_path); 
+
+  errno = 0;
+  RECDIR* recdir = openrecdir(".");
+  struct dirent* ent = readrecdir(recdir);
+  while (ent) {
+    printf("recdir file: %s/%s\n", recdir_path(recdir), ent->d_name);
+    ent = readrecdir(recdir);
+  }
+  
+  if (errno != 0) {
+    fprintf(stderr, "ERROR: We could not read the directory: %s\n", recdir_path(recdir));
+    exit(1);
+  }
+
+  closerecdir(recdir);
 
   return 0;
 }

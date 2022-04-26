@@ -1,6 +1,6 @@
 .RECIPEPREFIX = |
 CFLAGS=-Wall -Wextra -std=c11 -pedantic -ggdb
+SRC=src/main.c src/recdir.c
 
-
-removedup: src/main.c
-| $(CC) $(CFLAGS) -o removedup src/main.c $(LIBS) 
+removedup: $(SRC)
+| $(CC) $(CFLAGS) -o removedup $(SRC) $(LIBS) 
