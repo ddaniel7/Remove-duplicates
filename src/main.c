@@ -11,6 +11,9 @@
 
 #define DIRS_CAP 1024
  
+
+char* join_path(const char* base, const char* file);
+
 typedef struct {
   DIR* dir;
   char* path;
@@ -24,7 +27,7 @@ typedef struct {
 int recdir_push(RECDIR* recdir, char* path)
 {
   assert(recdir->stack_size < DIRS_CAP);
-  DIR_Frame* top = &recdir->stack[recdir->stack_size];
+  RECDIR_Frame* top = &recdir->stack[recdir->stack_size];
   top->path = path;
   top->dir = opendir(top->path);
   if (top->dir == NULL)
