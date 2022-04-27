@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <stdio.h>
 
 char* join_path(const char* base, const char* file);
 
@@ -26,12 +27,14 @@ void recdir_pop(RECDIR* recdir)
 { 
   assert(recdir->stack_size > 0);
   RECDIR_Frame* top = &recdir->stack[--recdir->stack_size];
-  int ret = closedir(top->dir);
-  assert(ret == 0);
+  if (top->dir != NULL) {
+    int ret = closedir(top->dir);
+    assert(ret == 0);
+  }
   free(top->path);
 }
 
-RECDIR* openrecdir(const char* dir_path)
+RECDIR* recdir_open(const char* dir_path)
 {
   RECDIR* recdir = malloc(sizeof(RECDIR));
   assert(recdir != NULL);
@@ -46,7 +49,7 @@ RECDIR* openrecdir(const char* dir_path)
   return recdir;
 }
 
-struct dirent* readrecdir(RECDIR* recdirp)
+struct dirent* recdir_read(RECDIR* recdirp)
 {
   while (recdirp->stack_size > 0) {
     RECDIR_Frame* top = &recdirp->stack[recdirp->stack_size - 1];
@@ -76,7 +79,7 @@ struct dirent* readrecdir(RECDIR* recdirp)
   return NULL;
 }
 
-int closerecdir(RECDIR* recdirp)
+int recdir_close(RECDIR* recdirp)
 {
   while (recdirp->stack_size > 0) {
     recdir_pop(recdirp);
@@ -105,8 +108,45 @@ char* join_path(const char* base, const char* file)
   return result;
 }
 
-char* recdir_path(RECDIR* recdir) 
+RECDIR_Frame* recdir_top(RECDIR* recdir)
 {
   assert(recdir->stack_size > 0);
-  return recdir->stack[recdir->stack_size - 1].path;
+  return &recdir->stack[recdir->stack_size - 1];
+}
+
+void visit_files(const char* dir_path)
+{
+  DIR *dir = opendir(dir_path);
+  if (dir == NULL) {
+    fprintf(stderr, "ERROR: Could not open directory %s: %s\n",
+      dir_path, strerror(errno));
+      exit(1);
+  }
+
+  errno = 0;
+  struct dirent *ent = readdir(dir);
+  while (ent != NULL) 
+  {
+    char* child_path = join_path(dir_path, ent->d_name);
+    if (ent->d_type == DT_DIR) {
+      if (strcmp(ent->d_name, ".") != 0 && strcmp(ent->d_name, "..") != 0) 
+      {
+        visit_files(child_path);
+      }
+    } 
+    else 
+    {
+      printf("file: %s\n", child_path);
+    }
+    free(child_path);
+    ent = readdir(dir);
+  }
+
+  if (errno != 0) {
+    fprintf(stderr, "ERROR: could not read directory %s: %s\n",
+      dir_path, strerror(errno));
+      exit(1);
+  }
+  
+  closedir(dir); 
 }
