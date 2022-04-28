@@ -6,3 +6,6 @@
 $ make
 $ ./removeduplicates
 ```
+# References:
+- sha256
+https://github.com/B-Con/crypto-algorithms
